@@ -8,12 +8,15 @@
 #include <string>
 
 #include <thread>
-
+#include <vector>
+#include <mutex>
 
 using namespace std::literals;
 
 namespace {
     unsigned ln = 1;
+    std::mutex stdOutLock;
+
     auto Color(const std::string& s) {
         return "\x1B[32m" + s + ": " + "\x1B[0m";
     }
@@ -37,7 +40,9 @@ namespace {
         req.setOpt(cURLpp::Options::NoProgress(false));
         req.setOpt(cURLpp::Options::FollowLocation(true));
         req.setOpt(cURLpp::Options::ProgressFunction([&](std::size_t total, std::size_t done, auto...) {
+            stdOutLock.lock();
             std::cout << Line(line) << Color(getURLFile(url)) << done << " of " << total << " bytes downloaded (" << int(total ? done*100./total : 0) << "%)" << std::flush;
+            stdOutLock.unlock(); 
             return 0;
         }));
         req.setOpt(cURLpp::Options::WriteFunction([&](const char* p, std::size_t size, std::size_t nmemb) {
@@ -52,11 +57,18 @@ namespace {
 int main() {
     cURLpp::initialize();
     unsigned line = 1;
+    
+    std::vector<std::thread> currDownloading;
 
     for(const auto& p: {"http://i.imgur.com/Wt6xNSA.jpg"s,
                         "http://i.imgur.com/RxfpuNO.jpg"s,
                         "http://i.imgur.com/TTGRX5D.png"s,
                         "http://i.imgur.com/LCdmRya.png"s}) {
-        Download(p, line++);
+        currDownloading.emplace_back([p, l = line++]{
+            Download(p,l);
+        });
+    }
+    for(auto& p: currDownloading){
+        p.join();
     }
 }
